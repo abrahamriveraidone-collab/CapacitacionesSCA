@@ -1,7 +1,7 @@
 {
   "name": "scania-malla-capacitacion",
   "version": "1.0.0",
-  "description": "Scania — Malla de Capacitación de Almacenes",
+  "description": "Scania \u2014 Malla de Capacitaci\u00f3n de Almacenes",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,8 +11,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.21.0"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

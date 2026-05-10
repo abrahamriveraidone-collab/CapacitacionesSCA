@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { marcarLeccionVista } from '../lib/supabase'
 import logoSrc from '../assets/logo_scania.png'
 
-export function ModulePage({ mod, user, onBack, onStartQuiz }) {
+export function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }) {
   const [tab, setTab] = useState('lecciones')
 
   async function handleLeccion(lec) {
@@ -21,7 +21,7 @@ export function ModulePage({ mod, user, onBack, onStartQuiz }) {
           <div className="logo-text"><span className="logo-main">Scania</span><span className="logo-sub">Malla de Capacitación de Almacenes</span></div>
         </div>
         <div />
-        <button className="admin-btn" onClick={() => window.location.href = '/admin/login'}>⬡ Panel Admin</button>
+        <button className="admin-btn" onClick={() => onGoAdmin && onGoAdmin()}>⬡ Panel Admin</button>
       </nav>
 
       <div style={{ background: 'var(--navy)', padding: '.9rem 1.4rem', position: 'relative', overflow: 'hidden' }}>

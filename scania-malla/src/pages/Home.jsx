@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { getModulos, getMaterial, getExamenes, getProgreso } from '../lib/supabase'
 import logoSrc from '../assets/logo_scania.png'
 
-export default function Home({ user, onLogout, onOpenMod }) {
+export default function Home({ user, onLogout, onOpenMod, onGoAdmin }) {
   const [tab, setTab]         = useState('cap')
   const [modulos, setModulos] = useState([])
   const [material, setMaterial] = useState([])
@@ -44,7 +44,7 @@ export default function Home({ user, onLogout, onOpenMod }) {
           <span style={{ background: 'rgba(255,255,255,.1)', color: 'rgba(255,255,255,.8)', fontSize: '10px', padding: '3px 9px', border: '1px solid rgba(255,255,255,.14)', fontWeight: 500 }}>
             {user.sucursales?.nombre || user.region}
           </span>
-          <button className="admin-btn" onClick={() => window.location.href = '/admin/login'}>⬡ Panel Admin</button>
+          <button className="admin-btn" onClick={() => onGoAdmin && onGoAdmin()}>⬡ Panel Admin</button>
         </div>
       </nav>
 
@@ -171,7 +171,7 @@ export default function Home({ user, onLogout, onOpenMod }) {
               <div key={e.id} className="li">
                 <div className="lic lq" style={{ fontSize: '12px' }}>✎</div>
                 <div className="lin"><div className="lt">{e.titulo}</div><div className="lm">{e.modulos?.titulo} · {e.preguntas?.length || 0} preguntas</div></div>
-                <button className="btn-p" style={{ padding: '7px 14px' }} onClick={() => alert('Ir al examen: ' + e.titulo)}>Rendir examen</button>
+                <button className="btn-p" style={{ padding: '7px 14px' }} onClick={() => {}}>Rendir examen</button>
               </div>
             ))}
           </div>

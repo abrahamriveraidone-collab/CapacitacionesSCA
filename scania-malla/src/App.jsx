@@ -1,4 +1,3 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState } from 'react'
 import Gate        from './pages/Gate'
 import Home        from './pages/Home'
@@ -8,37 +7,69 @@ import AdminLogin  from './pages/AdminLogin'
 import Admin       from './pages/Admin'
 
 export default function App() {
-  const [user, setUser]         = useState(null)   // almacenero activo
-  const [curMod, setCurMod]     = useState(null)   // módulo seleccionado
-  const [curExam, setCurExam]   = useState(null)   // examen seleccionado
+  const [screen, setScreen]   = useState('gate')
+  const [user, setUser]       = useState(null)
+  const [curMod, setCurMod]   = useState(null)
+  const [curExam, setCurExam] = useState(null)
+
+  function go(s) {
+    setScreen(s)
+    const titles = {
+      gate:  'Scania — Malla de Capacitación de Almacenes',
+      home:  'Capacitaciones · Scania',
+      mod:   'Módulo · Scania',
+      quiz:  'Examen · Scania',
+      login: 'Administrador · Scania',
+      admin: 'Panel Admin · Scania',
+    }
+    document.title = titles[s] || 'Scania — Malla de Capacitación de Almacenes'
+  }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Plataforma almacenero */}
-        <Route path="/" element={
-          user
-            ? <Home user={user} onLogout={() => setUser(null)} onOpenMod={m => { setCurMod(m); window.location.href = '/modulo'; }} />
-            : <Gate onLogin={setUser} />
-        } />
-        <Route path="/modulo" element={
-          curMod
-            ? <ModulePage mod={curMod} user={user} onBack={() => window.location.href = '/'} onStartQuiz={e => { setCurExam(e); window.location.href = '/quiz'; }} />
-            : <Navigate to="/" />
-        } />
-        <Route path="/quiz" element={
-          curExam && user
-            ? <QuizPage exam={curExam} user={user} mod={curMod} onBack={() => window.location.href = '/modulo'} />
-            : <Navigate to="/" />
-        } />
-
-        {/* Admin */}
-        <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin/*"     element={<Admin />} />
-
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </BrowserRouter>
+    <div style={{ minHeight: '100vh' }}>
+      {screen === 'gate' && (
+        <Gate
+          onLogin={u => { setUser(u); go('home') }}
+          onGoAdmin={() => go('login')}
+        />
+      )}
+      {screen === 'home' && user && (
+        <Home
+          user={user}
+          onLogout={() => { setUser(null); go('gate') }}
+          onOpenMod={m => { setCurMod(m); go('mod') }}
+          onGoAdmin={() => go('login')}
+        />
+      )}
+      {screen === 'mod' && curMod && (
+        <ModulePage
+          mod={curMod}
+          user={user}
+          onBack={() => go('home')}
+          onStartQuiz={e => { setCurExam(e); go('quiz') }}
+          onGoAdmin={() => go('login')}
+        />
+      )}
+      {screen === 'quiz' && (
+        <QuizPage
+          exam={curExam}
+          user={user}
+          mod={curMod}
+          onBack={() => go('mod')}
+        />
+      )}
+      {screen === 'login' && (
+        <AdminLogin
+          onLogin={() => go('admin')}
+          onBack={() => go(user ? 'home' : 'gate')}
+        />
+      )}
+      {screen === 'admin' && (
+        <Admin
+          onGoPlataforma={() => go(user ? 'home' : 'gate')}
+          onLogout={() => { go('gate') }}
+        />
+      )}
+    </div>
   )
 }
