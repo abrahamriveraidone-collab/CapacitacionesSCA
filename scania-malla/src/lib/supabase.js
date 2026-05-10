@@ -147,6 +147,18 @@ export async function guardarResultadoExamen({ almacenero_id, examen_id, modulo_
   }
 }
 
+export async function actualizarProgreso(almacenero_id, modulo_id, porcentaje, completado) {
+  await supabase
+    .from('progreso')
+    .upsert({
+      almacenero_id,
+      modulo_id,
+      porcentaje,
+      completado,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'almacenero_id,modulo_id' })
+}
+
 export async function marcarLeccionVista(almacenero_id, leccion_id) {
   await supabase.from('lecciones_vistas')
     .upsert({ almacenero_id, leccion_id }, { onConflict: 'almacenero_id,leccion_id' })

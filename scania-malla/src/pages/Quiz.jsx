@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { guardarResultadoExamen } from '../lib/supabase'
+import { guardarResultadoExamen, actualizarProgreso } from '../lib/supabase'
 import logoSrc from '../assets/logo_scania.png'
 
 export default function QuizPage({ exam, user, mod, onBack }) {
@@ -32,6 +32,10 @@ export default function QuizPage({ exam, user, mod, onBack }) {
           aprobado,
           respuestas:    nuevas,
         })
+        // Si aprobó, marcar módulo como completado al 100%
+        if (aprobado && mod?.id) {
+          await actualizarProgreso(user.id, mod.id, 100, true)
+        }
       }
       setGuardado(true)
       setQ(total) // trigger result screen
