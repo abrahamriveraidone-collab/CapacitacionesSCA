@@ -100,11 +100,21 @@ export async function getExamenes() {
 }
 
 export async function upsertExamen(examen) {
-  return supabase.from('examenes').upsert(examen)
+  const { data, error } = await supabase
+    .from('examenes')
+    .upsert(examen)
+    .select()
+    .single()
+  return { data, error }
 }
 
 export async function upsertPregunta(pregunta) {
-  return supabase.from('preguntas').upsert(pregunta)
+  const { data, error } = await supabase
+    .from('preguntas')
+    .upsert(pregunta)
+    .select()
+    .single()
+  return { data, error }
 }
 
 export async function archivarExamen(id, archivado) {

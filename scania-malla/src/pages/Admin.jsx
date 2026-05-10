@@ -151,10 +151,29 @@ export default function Admin({ onGoPlataforma, onLogout }) {
   // ── EXÁMENES ──
   async function saveExam(estado) {
     if (!examForm.titulo.trim()) { showNotif('Escribe el título.'); return }
-    const { data: ex } = await upsertExamen({ ...examForm, estado, archivado: false })
-    if (ex) {
-      for (let i = 0; i < preguntas.length; i++) {
-        await upsertPregunta({ ...preguntas[i], examen_id: ex.id, orden: i })
+    // 1. Guardar examen y obtener su id
+    const { data: ex, error: exError } = await upsertExamen({ ...examForm, estado, archivado: false })
+    if (exError || !ex) {
+      showNotif('Error al guardar el examen.')
+      console.error('upsertExamen error:', exError)
+      return
+    }
+    // 2. Guardar cada pregunta con el examen_id
+    for (let i = 0; i < preguntas.length; i++) {
+      const p = preguntas[i]
+      if (!p.texto.trim()) continue
+      const { error: pError } = await upsertPregunta({
+        texto:    p.texto,
+        opcion_a: p.opcion_a,
+        opcion_b: p.opcion_b,
+        opcion_c: p.opcion_c,
+        opcion_d: p.opcion_d,
+        correcta: p.correcta,
+        examen_id: ex.id,
+        orden: i,
+      })
+      if (pError) {
+        console.error('upsertPregunta error:', pError)
       }
     }
     await loadAll()
@@ -162,7 +181,7 @@ export default function Admin({ onGoPlataforma, onLogout }) {
     setExamForm({ titulo:'', modulo_id:'', estado:'borrador' })
     setPregs([{ texto:'', opcion_a:'', opcion_b:'', opcion_c:'', opcion_d:'', correcta:'a' }])
     setQcMod(1)
-    showNotif(estado === 'activo' ? 'Examen publicado.' : 'Borrador guardado.')
+    showNotif(estado === 'activo' ? 'Examen publicado con ' + preguntas.length + ' preguntas.' : 'Borrador guardado.')
   }
 
   async function handleArchivarExam(id, v) {
