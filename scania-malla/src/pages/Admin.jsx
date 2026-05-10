@@ -6,7 +6,7 @@ import {
   getSucursales, upsertSucursal, archivarSucursal,
   getAllAlmaceneros, upsertAlmacenero, archivarAlmacenero,
   getAllModulos as getModulosAdmin,
- from '../lib/supabase'
+} from '../lib/supabase'
 import logoSrc from '../assets/logo_scania.png'
 
 // Protección simple de ruta admin
