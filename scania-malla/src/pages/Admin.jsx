@@ -21,6 +21,12 @@ import {
   getSolicitudesIntentos,
   aprobarSolicitudIntentos,
   getReporteNotas,
+  getSubcarpetas,
+  upsertSubcarpeta,
+  deleteSubcarpeta,
+  upsertMaterialSubcarpeta,
+  deleteMaterialSubcarpeta,
+  uploadPDFSubcarpeta,
 } from '../lib/supabase'
 import logoSrc from '../assets/logo_scania.png'
 
@@ -62,6 +68,12 @@ export default function Admin({ onGoPlataforma, onLogout }) {
   const [solicitudes, setSolicitudes] = useState([])
   const [reporte, setReporte] = useState([])
   const [reporteFlt, setReporteFlt] = useState('all')
+  const [subcarpetas, setSubcarpetas] = useState([])
+  const [subcExpandida, setSubcExpandida] = useState(null)
+  const [newSubcNombre, setNewSubcNombre] = useState('')
+  const [newSubcDesc, setNewSubcDesc] = useState('')
+  const [newSubcParent, setNewSubcParent] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
 
   function showNotif(msg) {
     setNotif(msg)
@@ -145,6 +157,11 @@ export default function Admin({ onGoPlataforma, onLogout }) {
     setLecs(m.lecciones || [])
     setSelColor(m.color || '#041E42')
     setModData({ titulo: m.titulo, categoria: m.categoria, descripcion: m.descripcion, icono: m.icono, color: m.color, estado: m.estado })
+    setSubcarpetas([])
+    setSubcExpandida(null)
+    setNewSubcNombre('')
+    setNewSubcDesc('')
+    cargarSubcarpetas(m.id)
     setModForm(m.id)
   }
 
@@ -162,6 +179,79 @@ export default function Admin({ onGoPlataforma, onLogout }) {
     await archivarModulo(id, v)
     await loadAll()
     showNotif(v ? 'Módulo archivado.' : 'Módulo restaurado.')
+  }
+
+  async function cargarSubcarpetas(modId) {
+    const subs = await getSubcarpetas(modId)
+    setSubcarpetas(subs)
+  }
+
+  async function crearSubcarpeta(modId) {
+    if (!newSubcNombre.trim()) { showNotif('Escribe el nombre de la subcarpeta.'); return }
+    const { error } = await upsertSubcarpeta({
+      modulo_id:   modId,
+      parent_id:   newSubcParent || null,
+      nombre:      newSubcNombre.trim(),
+      descripcion: newSubcDesc.trim(),
+      orden:       subcarpetas.length,
+    })
+    if (error) { showNotif('Error al crear subcarpeta.'); return }
+    setNewSubcNombre('')
+    setNewSubcDesc('')
+    setNewSubcParent(null)
+    await cargarSubcarpetas(modId)
+    showNotif('Subcarpeta creada.')
+  }
+
+  async function eliminarSubcarpeta(id, modId) {
+    await deleteSubcarpeta(id)
+    await cargarSubcarpetas(modId)
+    showNotif('Subcarpeta eliminada.')
+  }
+
+  async function handleDropEnSubcarpeta(e, subcId, modId) {
+    e.preventDefault()
+    setDragOver(null)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length === 0) return
+    for (const file of files) {
+      const isLink = false
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const path = 'subcarpetas/' + subcId + '/' + Date.now() + '_' + file.name
+        const { url, error } = await uploadPDFSubcarpeta(file, path)
+        if (error) { showNotif('Error al subir ' + file.name); continue }
+        await upsertMaterialSubcarpeta({
+          subcarpeta_id: subcId,
+          titulo:        file.name.replace('.pdf',''),
+          tipo:          'pdf',
+          url,
+          storage_path:  path,
+          tamano_mb:     (file.size / 1024 / 1024).toFixed(1),
+          estado:        'activo',
+        })
+      }
+    }
+    await cargarSubcarpetas(modId)
+    showNotif(files.length + ' archivo(s) subido(s) a la subcarpeta.')
+  }
+
+  async function agregarLinkSubcarpeta(subcId, titulo, url, modId) {
+    if (!titulo.trim() || !url.trim()) { showNotif('Completa título y URL.'); return }
+    await upsertMaterialSubcarpeta({
+      subcarpeta_id: subcId,
+      titulo:        titulo.trim(),
+      tipo:          'link',
+      url:           url.trim(),
+      estado:        'activo',
+    })
+    await cargarSubcarpetas(modId)
+    showNotif('Link agregado.')
+  }
+
+  async function eliminarMatSubc(id, modId) {
+    await deleteMaterialSubcarpeta(id)
+    await cargarSubcarpetas(modId)
+    showNotif('Archivo eliminado.')
   }
 
   // ── MATERIAL ──
@@ -473,7 +563,155 @@ export default function Admin({ onGoPlataforma, onLogout }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+                {/* SUBCARPETAS — solo visible al editar */}
+                {modForm !== 'new' && (
+                  <div style={{ marginTop:'1rem', borderTop:'1px solid var(--g100)', paddingTop:'1rem' }}>
+                    <div style={{ fontSize:'11px', fontWeight:800, color:'var(--navy)', marginBottom:'.7rem' }}>
+                      📁 Subcarpetas del módulo
+                    </div>
+
+                    {/* Lista de subcarpetas existentes */}
+                    {subcarpetas.map(sub => (
+                      <div key={sub.id} style={{ marginBottom:'6px' }}>
+                        {/* Cabecera de subcarpeta */}
+                        <div
+                          style={{ display:'flex', alignItems:'center', gap:'8px', background:'var(--g50)', border:'1px solid var(--g200)', borderLeft:'3px solid var(--navy)', padding:'.6rem .9rem', cursor:'pointer' }}
+                          onClick={() => setSubcExpandida(subcExpandida === sub.id ? null : sub.id)}>
+                          <span style={{ fontSize:'11px', color:'var(--navy)', fontWeight:700, flex:1 }}>
+                            {subcExpandida === sub.id ? '▼' : '▶'} {sub.nombre}
+                          </span>
+                          {sub.descripcion && (
+                            <span style={{ fontSize:'9.5px', color:'var(--g400)' }}>{sub.descripcion}</span>
+                          )}
+                          <span style={{ fontSize:'9px', color:'var(--g400)' }}>{(sub.material_subcarpeta || []).length} archivo(s)</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); eliminarSubcarpeta(sub.id, modForm) }}
+                            style={{ background:'none', border:'none', color:'var(--red)', cursor:'pointer', fontSize:'13px', padding:'0 4px' }}>✕</button>
+                        </div>
+
+                        {/* Contenido expandido */}
+                        {subcExpandida === sub.id && (
+                          <div style={{ border:'1px solid var(--g200)', borderTop:'none', padding:'.8rem' }}>
+
+                            {/* Archivos existentes */}
+                            {(sub.material_subcarpeta || []).map(mat => (
+                              <div key={mat.id} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'.45rem 0', borderBottom:'1px solid var(--g100)' }}>
+                                <span style={{ fontSize:'13px' }}>{mat.tipo === 'pdf' ? '📄' : '🔗'}</span>
+                                <span style={{ flex:1, fontSize:'11px', color:'var(--navy)' }}>{mat.titulo}</span>
+                                <span style={{ fontSize:'9px', color:'var(--g400)' }}>{mat.tipo === 'pdf' ? 'PDF' + (mat.tamano_mb ? ' · ' + mat.tamano_mb + ' MB' : '') : 'Link'}</span>
+                                <button
+                                  onClick={() => eliminarMatSubc(mat.id, modForm)}
+                                  style={{ background:'none', border:'none', color:'var(--red)', cursor:'pointer', fontSize:'12px' }}>✕</button>
+                              </div>
+                            ))}
+
+                            {/* Zona drag & drop */}
+                            <div
+                              onDragOver={e => { e.preventDefault(); setDragOver(sub.id) }}
+                              onDragLeave={() => setDragOver(null)}
+                              onDrop={e => handleDropEnSubcarpeta(e, sub.id, modForm)}
+                              style={{ border:'2px dashed ' + (dragOver === sub.id ? 'var(--red)' : 'var(--g200)'), background: dragOver === sub.id ? '#FFF5F5' : 'var(--g50)', padding:'1rem', textAlign:'center', cursor:'pointer', marginTop:'8px', transition:'all .15s' }}>
+                              <div style={{ fontSize:'18px', marginBottom:'3px', opacity:.5 }}>📂</div>
+                              <div style={{ fontSize:'10.5px', color:'var(--g400)', fontWeight:500 }}>
+                                Arrastra y suelta PDFs aquí
+                              </div>
+                              <div style={{ fontSize:'9px', color:'var(--g400)', marginTop:'2px' }}>Máx. 20 MB por archivo</div>
+                            </div>
+
+                            {/* Agregar link */}
+                            <div style={{ marginTop:'8px', display:'flex', gap:'6px' }}>
+                              <input
+                                id={'link-tit-' + sub.id}
+                                className="fi"
+                                style={{ flex:1 }}
+                                placeholder="Título del link"
+                              />
+                              <input
+                                id={'link-url-' + sub.id}
+                                className="fi"
+                                style={{ flex:2 }}
+                                placeholder="https://..."
+                              />
+                              <button
+                                className="btn-p btn-sm"
+                                onClick={() => {
+                                  const t = document.getElementById('link-tit-' + sub.id)?.value || ''
+                                  const u = document.getElementById('link-url-' + sub.id)?.value || ''
+                                  agregarLinkSubcarpeta(sub.id, t, u, modForm)
+                                  if (document.getElementById('link-tit-' + sub.id)) document.getElementById('link-tit-' + sub.id).value = ''
+                                  if (document.getElementById('link-url-' + sub.id)) document.getElementById('link-url-' + sub.id).value = ''
+                                }}>
+                                + Link
+                              </button>
+                            </div>
+
+                            {/* Sub-subcarpeta */}
+                            <div style={{ marginTop:'8px', display:'flex', gap:'6px', alignItems:'center' }}>
+                              <span style={{ fontSize:'10px', color:'var(--g400)', whiteSpace:'nowrap' }}>Sub-carpeta:</span>
+                              <input
+                                id={'subsubc-' + sub.id}
+                                className="fi"
+                                style={{ flex:1 }}
+                                placeholder="Nombre de sub-carpeta"
+                              />
+                              <button
+                                className="btn-g btn-sm"
+                                onClick={async () => {
+                                  const nom = document.getElementById('subsubc-' + sub.id)?.value || ''
+                                  if (!nom.trim()) return
+                                  await upsertSubcarpeta({ modulo_id: modForm, parent_id: sub.id, nombre: nom.trim(), orden: 0 })
+                                  document.getElementById('subsubc-' + sub.id).value = ''
+                                  await cargarSubcarpetas(modForm)
+                                  showNotif('Sub-carpeta creada.')
+                                }}>
+                                + Crear
+                              </button>
+                            </div>
+
+                            {/* Sub-subcarpetas */}
+                            {subcarpetas.filter(s => s.parent_id === sub.id).map(subsub => (
+                              <div key={subsub.id} style={{ marginTop:'6px', marginLeft:'16px', border:'1px solid var(--g100)', borderLeft:'3px solid var(--g200)', padding:'.5rem .8rem', background:'#fff' }}>
+                                <div style={{ fontSize:'10.5px', fontWeight:700, color:'var(--navy)', marginBottom:'5px' }}>📁 {subsub.nombre}</div>
+                                <div
+                                  onDragOver={e => { e.preventDefault(); setDragOver(subsub.id) }}
+                                  onDragLeave={() => setDragOver(null)}
+                                  onDrop={e => handleDropEnSubcarpeta(e, subsub.id, modForm)}
+                                  style={{ border:'2px dashed ' + (dragOver === subsub.id ? 'var(--red)' : 'var(--g200)'), background: dragOver === subsub.id ? '#FFF5F5' : 'var(--g50)', padding:'.7rem', textAlign:'center', fontSize:'10px', color:'var(--g400)', cursor:'pointer' }}>
+                                  📂 Arrastra PDFs aquí
+                                </div>
+                                {(subsub.material_subcarpeta || []).map(mat => (
+                                  <div key={mat.id} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'.4rem 0', borderBottom:'1px solid var(--g100)', marginTop:'4px' }}>
+                                    <span style={{ fontSize:'12px' }}>{mat.tipo === 'pdf' ? '📄' : '🔗'}</span>
+                                    <span style={{ flex:1, fontSize:'10.5px', color:'var(--navy)' }}>{mat.titulo}</span>
+                                    <button onClick={() => eliminarMatSubc(mat.id, modForm)} style={{ background:'none', border:'none', color:'var(--red)', cursor:'pointer', fontSize:'11px' }}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Crear nueva subcarpeta */}
+                    <div style={{ background:'var(--g50)', border:'1px dashed var(--g200)', padding:'.8rem', marginTop:'6px' }}>
+                      <div style={{ fontSize:'9.5px', fontWeight:700, color:'var(--g600)', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:'7px' }}>+ Nueva subcarpeta</div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'7px', marginBottom:'7px' }}>
+                        <div>
+                          <label className="fl">Nombre</label>
+                          <input className="fi" placeholder="Ej: Módulo 1 — Introducción" value={newSubcNombre} onChange={e => setNewSubcNombre(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="fl">Descripción (opcional)</label>
+                          <input className="fi" placeholder="Breve descripción" value={newSubcDesc} onChange={e => setNewSubcDesc(e.target.value)} />
+                        </div>
+                      </div>
+                      <button className="btn-p btn-sm" onClick={() => crearSubcarpeta(modForm)}>Crear subcarpeta</button>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end', marginTop:'1rem' }}>
                   <button className="btn-g" onClick={() => setModForm(null)}>Cancelar</button>
                   <button className="btn-g" onClick={() => saveMod('borrador')}>Guardar borrador</button>
                   <button className="btn-p" onClick={() => saveMod('publicado')}>Publicar módulo</button>

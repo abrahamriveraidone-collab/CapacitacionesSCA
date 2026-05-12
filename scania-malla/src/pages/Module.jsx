@@ -1,49 +1,137 @@
 import { useState, useEffect } from 'react'
-import { getMaterial, getExamenes, marcarLeccionVista, actualizarProgreso } from '../lib/supabase'
+import { getMaterial, getExamenes, getSubcarpetas, marcarLeccionVista, actualizarProgreso } from '../lib/supabase'
 import logoSrc from '../assets/logo_scania.png'
 
+function SubcarpetaItem({ sub, nivel, onAbrirArchivo }) {
+  const [expandida, setExpandida] = useState(false)
+  const archivos = sub.material_subcarpeta || []
+  const subSubs  = sub.hijos || []
+  const indent   = nivel * 16
+
+  return (
+    <div style={{ marginBottom:'4px' }}>
+      {/* Cabecera de la carpeta */}
+      <div
+        onClick={() => setExpandida(!expandida)}
+        style={{ display:'flex', alignItems:'center', gap:'8px', padding:'.6rem .9rem', background: nivel === 0 ? 'var(--g50)' : '#fff', border:'1px solid var(--g200)', borderLeft: '3px solid ' + (nivel === 0 ? 'var(--navy)' : 'var(--g200)'), cursor:'pointer', marginLeft: indent + 'px', transition:'background .15s' }}>
+        <span style={{ fontSize:'13px', color: nivel === 0 ? 'var(--navy)' : 'var(--g400)', transition:'transform .2s', display:'inline-block', transform: expandida ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+        <span style={{ fontSize:'13px' }}>📁</span>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:'12px', fontWeight:700, color:'var(--navy)' }}>{sub.nombre}</div>
+          {sub.descripcion && (
+            <div style={{ fontSize:'9.5px', color:'var(--g400)', marginTop:'1px' }}>{sub.descripcion}</div>
+          )}
+        </div>
+        <span style={{ fontSize:'9.5px', color:'var(--g400)' }}>
+          {archivos.length + subSubs.length} elemento{archivos.length + subSubs.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Contenido expandido */}
+      {expandida && (
+        <div style={{ marginLeft: (indent + 16) + 'px', marginTop:'2px' }}>
+          {/* Archivos dentro de esta carpeta */}
+          {archivos.map(mat => (
+            <div
+              key={mat.id}
+              className="li"
+              onClick={() => onAbrirArchivo(mat)}
+              style={{ cursor:'pointer', borderLeft:'3px solid transparent' }}>
+              <div className={'lic ' + (mat.tipo === 'pdf' ? 'lp' : 'lq')} style={{ fontSize:'13px' }}>
+                {mat.tipo === 'pdf' ? '📄' : '🔗'}
+              </div>
+              <div className="lin">
+                <div className="lt">{mat.titulo}</div>
+                <div className="lm">
+                  {mat.tipo === 'pdf' ? 'PDF' : 'Link'}
+                  {mat.tamano_mb ? ' · ' + mat.tamano_mb + ' MB' : ''}
+                </div>
+              </div>
+              <span style={{ fontSize:'9px', color:'var(--red)', fontWeight:600 }}>
+                {mat.tipo === 'pdf' ? 'Descargar' : 'Ver'}
+              </span>
+            </div>
+          ))}
+
+          {/* Sub-subcarpetas recursivas */}
+          {subSubs.map(subsub => (
+            <SubcarpetaItem
+              key={subsub.id}
+              sub={subsub}
+              nivel={nivel + 1}
+              onAbrirArchivo={onAbrirArchivo}
+            />
+          ))}
+
+          {archivos.length === 0 && subSubs.length === 0 && (
+            <div style={{ fontSize:'10.5px', color:'var(--g400)', padding:'.5rem .9rem', fontStyle:'italic' }}>
+              Carpeta vacía
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Construir árbol anidado de subcarpetas
+function buildTree(flat) {
+  const map = {}
+  flat.forEach(s => { map[s.id] = { ...s, hijos: [] } })
+  const roots = []
+  flat.forEach(s => {
+    if (s.parent_id && map[s.parent_id]) {
+      map[s.parent_id].hijos.push(map[s.id])
+    } else {
+      roots.push(map[s.id])
+    }
+  })
+  return roots
+}
+
 export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }) {
-  const [tab, setTab]           = useState('lecciones')
-  const [material, setMaterial] = useState([])
-  const [examenes, setExamenes] = useState([])
-  const [vistos, setVistos]     = useState(new Set())
-  const [loading, setLoading]   = useState(true)
+  const [tab, setTab]             = useState('lecciones')
+  const [material, setMaterial]   = useState([])
+  const [examenes, setExamenes]   = useState([])
+  const [subcarpetas, setSubs]    = useState([])
+  const [vistos, setVistos]       = useState(new Set())
+  const [loading, setLoading]     = useState(true)
 
   useEffect(() => {
     async function cargar() {
-      const [mats, exams] = await Promise.all([getMaterial(), getExamenes()])
-      const matDelMod  = mats.filter(m => m.modulo_id === mod.id && !m.archivado && m.estado === 'activo')
-      const examDelMod = exams.filter(e => e.modulo_id === mod.id && !e.archivado && e.estado === 'activo')
-      setMaterial(matDelMod)
-      setExamenes(examDelMod)
+      const [mats, exams, subs] = await Promise.all([
+        getMaterial(),
+        getExamenes(),
+        getSubcarpetas(mod.id),
+      ])
+      setMaterial(mats.filter(m => m.modulo_id === mod.id && !m.archivado && m.estado === 'activo'))
+      setExamenes(exams.filter(e => e.modulo_id === mod.id && !e.archivado && e.estado === 'activo'))
+      setSubs(subs)
       setLoading(false)
     }
     cargar()
   }, [mod.id])
 
-  async function handleAbrirMaterial(mat) {
-    if (user && !vistos.has(mat.id)) {
-      // Marcar lección como vista
+  async function handleAbrirArchivo(mat) {
+    if (user && mat.id && !vistos.has(mat.id)) {
       await marcarLeccionVista(user.id, mat.id)
-      const nuevosVistos = new Set(vistos)
-      nuevosVistos.add(mat.id)
-      setVistos(nuevosVistos)
-      // Calcular nuevo progreso: cada PDF/link = 50% si no hay examen, 25% si hay examen
+      const nuevos = new Set(vistos)
+      nuevos.add(mat.id)
+      setVistos(nuevos)
       const tieneExamen = examenes.length > 0
-      const porPDF = tieneExamen ? 25 : 50
-      const totalPDFs = material.length
-      const vistosCount = nuevosVistos.size
-      const porcentajePDFs = totalPDFs > 0 ? Math.round((vistosCount / totalPDFs) * porPDF * totalPDFs / totalPDFs) : 0
-      const porcentaje = Math.min(porcentajePDFs, tieneExamen ? 50 : 100)
+      const porcentaje  = tieneExamen ? 30 : 50
       await actualizarProgreso(user.id, mod.id, porcentaje, false)
     }
     if (mat.url) window.open(mat.url, '_blank')
   }
 
+  const arbolSubs  = buildTree(subcarpetas)
+  const hayContenido = material.length > 0 || arbolSubs.length > 0
+
   const tabs = [
-    { key:'lecciones', label:'Lecciones' },
+    { key:'lecciones', label:'Lecciones'  },
     { key:'evaluacion', label:'Evaluación' },
-    { key:'recursos',   label:'Recursos'  },
+    { key:'recursos',   label:'Recursos'   },
   ]
 
   return (
@@ -70,7 +158,6 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
           ← Volver al inicio
         </button>
         <div style={{ display:'flex', alignItems:'center', gap:'1rem' }}>
-          {/* Ícono grande */}
           <div style={{ fontSize:'48px', lineHeight:1, flexShrink:0 }}>{mod.icono}</div>
           <div>
             <div style={{ fontSize:'9px', fontWeight:700, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--red)', marginBottom:'4px' }}>{mod.categoria}</div>
@@ -112,15 +199,19 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
         {tab === 'lecciones' && (
           <>
             <div className="sec-lbl" style={{ marginBottom:'.9rem' }}>Contenido del módulo</div>
+
             {loading && <div style={{ fontSize:'12px', color:'var(--g400)' }}>Cargando contenido...</div>}
-            {!loading && material.length === 0 && (
+
+            {!loading && !hayContenido && (
               <div style={{ fontSize:'12px', color:'var(--g400)', padding:'.5rem 0' }}>
-                El administrador aún no ha cargado lecciones para este módulo.
+                El administrador aún no ha cargado contenido para este módulo.
               </div>
             )}
+
+            {/* Material directo del módulo */}
             {!loading && material.map(m => (
-              <div key={m.id} className="li" onClick={() => handleAbrirMaterial(m)} style={{ cursor:'pointer' }}>
-                <div className={'lic ' + (m.tipo === 'pdf' ? 'lp' : 'lq')} style={{ fontSize:'15px' }}>
+              <div key={m.id} className="li" onClick={() => handleAbrirArchivo(m)} style={{ cursor:'pointer' }}>
+                <div className={'lic ' + (m.tipo === 'pdf' ? 'lp' : 'lq')} style={{ fontSize:'13px' }}>
                   {m.tipo === 'pdf' ? '📄' : '▶'}
                 </div>
                 <div className="lin">
@@ -128,18 +219,34 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
                   <div className="lm">{m.tipo === 'pdf' ? 'PDF' : 'Video / Link'}{m.tamano_mb ? ' · ' + m.tamano_mb + ' MB' : ''}</div>
                 </div>
                 <span className={'lst ' + (vistos.has(m.id) ? 'lst-ok' : 'lst-pend')}>
-                  {vistos.has(m.id) ? 'Visto' : m.tipo === 'pdf' ? 'Descargar' : 'Ver'}
+                  {vistos.has(m.id) ? 'Visto ✓' : m.tipo === 'pdf' ? 'Descargar' : 'Ver'}
                 </span>
               </div>
             ))}
+
+            {/* Árbol de subcarpetas */}
+            {!loading && arbolSubs.length > 0 && (
+              <div style={{ marginTop: material.length > 0 ? '1rem' : 0 }}>
+                {arbolSubs.map(sub => (
+                  <SubcarpetaItem
+                    key={sub.id}
+                    sub={sub}
+                    nivel={0}
+                    onAbrirArchivo={handleAbrirArchivo}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Examen al final de lecciones */}
             {!loading && examenes.length > 0 && (
-              <div style={{ marginTop:'8px' }}>
+              <div style={{ marginTop:'1rem', borderTop:'1px solid var(--g100)', paddingTop:'1rem' }}>
                 {examenes.map(e => (
                   <div key={e.id} className="li" onClick={() => onStartQuiz(e)} style={{ cursor:'pointer' }}>
-                    <div className="lic lq" style={{ fontSize:'15px' }}>✎</div>
+                    <div className="lic lq" style={{ fontSize:'13px' }}>✎</div>
                     <div className="lin">
                       <div className="lt">{e.titulo}</div>
-                      <div className="lm">{(e.preguntas || []).length} preguntas · Resultado guardado automáticamente</div>
+                      <div className="lm">{(e.preguntas || []).length} preguntas · Máx. {Math.floor((e.tiempo_limite || 600) / 60)} minutos</div>
                     </div>
                     <button className="btn-p" style={{ padding:'6px 14px', fontSize:'9.5px' }}>Iniciar</button>
                   </div>
@@ -153,7 +260,7 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
         {tab === 'evaluacion' && (
           <>
             <div className="sec-lbl" style={{ marginBottom:'.9rem' }}>Evaluación de competencia</div>
-            {loading && <div style={{ fontSize:'12px', color:'var(--g400)' }}>Cargando exámenes...</div>}
+            {loading && <div style={{ fontSize:'12px', color:'var(--g400)' }}>Cargando...</div>}
             {!loading && examenes.length === 0 && (
               <div style={{ fontSize:'12px', color:'var(--g400)', padding:'.5rem 0' }}>
                 El administrador aún no ha publicado un examen para este módulo.
@@ -164,7 +271,9 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
                 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                   <div>
                     <div style={{ fontSize:'13px', fontWeight:700, color:'var(--navy)', marginBottom:'4px' }}>{e.titulo}</div>
-                    <div style={{ fontSize:'10px', color:'var(--g400)' }}>{(e.preguntas || []).length} preguntas · El resultado se guarda automáticamente</div>
+                    <div style={{ fontSize:'10px', color:'var(--g400)' }}>
+                      {(e.preguntas || []).length} preguntas · {Math.floor((e.tiempo_limite || 600) / 60)} minutos · Máx. {e.intentos_max || 2} intentos · Nota mínima: {e.nota_minima || 14}/20
+                    </div>
                   </div>
                   <button className="btn-p" style={{ padding:'9px 20px' }} onClick={() => onStartQuiz(e)}>
                     Iniciar examen
@@ -179,13 +288,13 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
         {tab === 'recursos' && (
           <>
             <div className="sec-lbl" style={{ marginBottom:'.9rem' }}>Material de referencia</div>
-            {loading && <div style={{ fontSize:'12px', color:'var(--g400)' }}>Cargando recursos...</div>}
-            {!loading && material.length === 0 && (
-              <div style={{ fontSize:'12px', color:'var(--g400)', padding:'.5rem 0' }}>No hay material disponible para este módulo.</div>
+            {loading && <div style={{ fontSize:'12px', color:'var(--g400)' }}>Cargando...</div>}
+            {!loading && material.length === 0 && arbolSubs.length === 0 && (
+              <div style={{ fontSize:'12px', color:'var(--g400)', padding:'.5rem 0' }}>No hay material disponible.</div>
             )}
             {!loading && material.map(m => (
               <div key={m.id} className="li">
-                <div className={'lic ' + (m.tipo === 'pdf' ? 'lp' : 'lq')} style={{ fontSize:'15px' }}>
+                <div className={'lic ' + (m.tipo === 'pdf' ? 'lp' : 'lq')} style={{ fontSize:'13px' }}>
                   {m.tipo === 'pdf' ? '📄' : '▶'}
                 </div>
                 <div className="lin">
@@ -197,6 +306,18 @@ export default function ModulePage({ mod, user, onBack, onStartQuiz, onGoAdmin }
                 </a>
               </div>
             ))}
+            {!loading && arbolSubs.length > 0 && (
+              <div style={{ marginTop: material.length > 0 ? '1rem' : 0 }}>
+                {arbolSubs.map(sub => (
+                  <SubcarpetaItem
+                    key={sub.id}
+                    sub={sub}
+                    nivel={0}
+                    onAbrirArchivo={handleAbrirArchivo}
+                  />
+                ))}
+              </div>
+            )}
           </>
         )}
 

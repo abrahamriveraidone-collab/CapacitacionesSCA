@@ -237,6 +237,54 @@ export async function archivarAlmacenero(id, archivado) {
   return supabase.from('almaceneros').update({ archivado }).eq('id', id)
 }
 
+
+// ── Subcarpetas ───────────────────────────────────────────
+export async function getSubcarpetas(modulo_id) {
+  const { data } = await supabase
+    .from('subcarpetas')
+    .select('*, material_subcarpeta(*)')
+    .eq('modulo_id', modulo_id)
+    .order('orden')
+  return data || []
+}
+
+export async function upsertSubcarpeta(sub) {
+  const { data, error } = await supabase
+    .from('subcarpetas')
+    .upsert(sub)
+    .select()
+    .single()
+  return { data, error }
+}
+
+export async function deleteSubcarpeta(id) {
+  return supabase.from('subcarpetas').delete().eq('id', id)
+}
+
+export async function upsertMaterialSubcarpeta(mat) {
+  const { data, error } = await supabase
+    .from('material_subcarpeta')
+    .upsert(mat)
+    .select()
+    .single()
+  return { data, error }
+}
+
+export async function deleteMaterialSubcarpeta(id) {
+  return supabase.from('material_subcarpeta').delete().eq('id', id)
+}
+
+export async function uploadPDFSubcarpeta(file, path) {
+  const { data, error } = await supabase.storage
+    .from('material-pdfs')
+    .upload(path, file, { upsert: true })
+  if (error) return { url: null, error }
+  const { data: urlData } = supabase.storage
+    .from('material-pdfs')
+    .getPublicUrl(path)
+  return { url: urlData.publicUrl, error: null }
+}
+
 // ── Dashboard ─────────────────────────────────────────────
 export async function getDashboardData() {
   const [alm, mods, exams, resultados] = await Promise.all([
