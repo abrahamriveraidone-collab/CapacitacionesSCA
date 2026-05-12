@@ -130,21 +130,60 @@ export async function getProgreso(almacenero_id) {
   return data || []
 }
 
-export async function guardarResultadoExamen({ almacenero_id, examen_id, modulo_id, puntaje, aprobado, respuestas }) {
-  // 1. Guardar resultado del examen
+export async function guardarResultadoExamen({ almacenero_id, examen_id, modulo_id, puntaje, nota_vigesimal, aprobado, respuestas, tiempo_segundos, intento_numero }) {
   await supabase.from('resultados_examenes').insert({
-    almacenero_id, examen_id, modulo_id, puntaje, aprobado, respuestas
+    almacenero_id,
+    examen_id,
+    modulo_id,
+    puntaje,
+    nota_vigesimal: nota_vigesimal || 0,
+    aprobado,
+    respuestas,
+    tiempo_segundos: tiempo_segundos || 0,
+    intento_numero: intento_numero || 1,
   })
-  // 2. Actualizar progreso del módulo automáticamente
-  if (aprobado) {
-    await supabase.from('progreso').upsert({
-      almacenero_id,
-      modulo_id,
-      porcentaje: puntaje,
-      completado: true,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'almacenero_id,modulo_id' })
-  }
+}
+
+export async function getIntentosPorExamen(almacenero_id, examen_id) {
+  const { data } = await supabase
+    .from('resultados_examenes')
+    .select('id')
+    .eq('almacenero_id', almacenero_id)
+    .eq('examen_id', examen_id)
+  return (data || []).length
+}
+
+export async function crearSolicitudIntentos({ almacenero_id, examen_id, mensaje }) {
+  return supabase.from('solicitudes_intentos').insert({
+    almacenero_id,
+    examen_id,
+    mensaje,
+    estado: 'pendiente',
+  })
+}
+
+export async function getSolicitudesIntentos() {
+  const { data } = await supabase
+    .from('solicitudes_intentos')
+    .select('*, almaceneros(nombre, codigo), examenes(titulo)')
+    .eq('estado', 'pendiente')
+    .order('created_at', { ascending: false })
+  return data || []
+}
+
+export async function aprobarSolicitudIntentos(id, intentos_extra) {
+  return supabase
+    .from('solicitudes_intentos')
+    .update({ estado: 'aprobado', intentos_extra })
+    .eq('id', id)
+}
+
+export async function getReporteNotas() {
+  const { data } = await supabase
+    .from('resultados_examenes')
+    .select('*, almaceneros(nombre, codigo, region, sucursales(nombre)), examenes(titulo, nota_minima, modulos(titulo))')
+    .order('created_at', { ascending: false })
+  return data || []
 }
 
 export async function actualizarProgreso(almacenero_id, modulo_id, porcentaje, completado) {
