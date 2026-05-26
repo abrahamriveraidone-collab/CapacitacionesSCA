@@ -94,9 +94,25 @@ export async function uploadPDF(file, path) {
 export async function getExamenes() {
   const { data } = await supabase
     .from('examenes')
-    .select('*, preguntas(*), modulos(titulo)')
+    .select('id, titulo, modulo_id, estado, archivado, nota_minima, tiempo_limite, intentos_max, tipo_audiencia, created_at, modulos(titulo)')
     .order('created_at', { ascending: false })
-  return data || []
+  if (!data) return []
+
+  // Cargar preguntas por separado para evitar duplicados por join
+  const ids = data.map(e => e.id)
+  const { data: pregs } = await supabase
+    .from('preguntas')
+    .select('*')
+    .in('examen_id', ids)
+
+  // Agrupar preguntas por examen_id
+  const pregsPorExamen = {}
+  ;(pregs || []).forEach(p => {
+    if (!pregsPorExamen[p.examen_id]) pregsPorExamen[p.examen_id] = []
+    pregsPorExamen[p.examen_id].push(p)
+  })
+
+  return data.map(e => ({ ...e, preguntas: pregsPorExamen[e.id] || [] }))
 }
 
 export async function upsertExamen(examen) {
@@ -171,11 +187,19 @@ export async function getSolicitudesIntentos() {
   return data || []
 }
 
-export async function aprobarSolicitudIntentos(id, intentos_extra) {
-  return supabase
+export async function aprobarSolicitudIntentos(id, intentos_extra, almacenero_id, examen_titulo) {
+  await supabase
     .from('solicitudes_intentos')
     .update({ estado: 'aprobado', intentos_extra })
     .eq('id', id)
+  // Crear notificación para el almacenero
+  if (almacenero_id) {
+    await supabase.from('notificaciones').insert({
+      almacenero_id,
+      titulo: '✓ Intentos habilitados',
+      mensaje: 'El administrador habilitó ' + intentos_extra + ' intento(s) adicional(es) para el examen: ' + (examen_titulo || ''),
+    })
+  }
 }
 
 export async function getReporteNotas() {
@@ -283,6 +307,41 @@ export async function uploadPDFSubcarpeta(file, path) {
     .from('material-pdfs')
     .getPublicUrl(path)
   return { url: urlData.publicUrl, error: null }
+}
+
+
+// ── Helpers de audiencia ──────────────────────────────────
+// Determina el tipo de un almacenero: 'distribuidor' o 'sucursal'
+export function getTipoAlmacenero(user) {
+  return user?.region === 'Distribuidor' ? 'distribuidor' : 'sucursal'
+}
+
+// Filtra items por tipo_audiencia
+export function filtrarPorAudiencia(items, tipo) {
+  return (items || []).filter(item =>
+    item.tipo_audiencia === tipo || item.tipo_audiencia === 'ambos'
+  )
+}
+
+// ── Notificaciones ────────────────────────────────────────
+export async function getNotificaciones(almacenero_id) {
+  const { data } = await supabase
+    .from('notificaciones')
+    .select('*')
+    .eq('almacenero_id', almacenero_id)
+    .order('created_at', { ascending: false })
+  return data || []
+}
+
+export async function marcarNotificacionLeida(id) {
+  return supabase
+    .from('notificaciones')
+    .update({ leida: true })
+    .eq('id', id)
+}
+
+export async function crearNotificacion({ almacenero_id, titulo, mensaje }) {
+  return supabase.from('notificaciones').insert({ almacenero_id, titulo, mensaje })
 }
 
 // ── Dashboard ─────────────────────────────────────────────

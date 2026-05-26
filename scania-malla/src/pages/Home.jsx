@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getModulos, getMaterial, getExamenes, getProgreso, guardarResultadoExamen } from '../lib/supabase'
+import { getModulos, getMaterial, getExamenes, getProgreso, getNotificaciones, marcarNotificacionLeida, getTipoAlmacenero, filtrarPorAudiencia } from '../lib/supabase'
 import logoSrc    from '../assets/logo_scania.png'
 import imgTruck1  from '../assets/Braasil.jpeg'
 import imgTruck2  from '../assets/Brasilia.jpeg'
@@ -11,7 +11,9 @@ export default function Home({ user, onLogout, onOpenMod, onGoAdmin }) {
   const [material, setMaterial] = useState([])
   const [examenes, setExamenes] = useState([])
   const [progreso, setProgreso] = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading]     = useState(true)
+  const [notifs, setNotifs]       = useState([])
+  const [showNotifs, setShowNotifs] = useState(false)
 
   useEffect(() => {
     cargarTodo()
@@ -19,16 +21,19 @@ export default function Home({ user, onLogout, onOpenMod, onGoAdmin }) {
 
   async function cargarTodo() {
     setLoading(true)
-    const [mods, mats, exams, prog] = await Promise.all([
+    const tipo = getTipoAlmacenero(user)
+    const [mods, mats, exams, prog, nots] = await Promise.all([
       getModulos(),
       getMaterial(),
       getExamenes(),
       getProgreso(user.id),
+      getNotificaciones(user.id),
     ])
-    setModulos(mods)
-    setMaterial(mats)
-    setExamenes(exams)
+    setModulos(filtrarPorAudiencia(mods, tipo))
+    setMaterial(filtrarPorAudiencia(mats, tipo))
+    setExamenes(filtrarPorAudiencia(exams, tipo))
     setProgreso(prog)
+    setNotifs(nots)
     setLoading(false)
   }
 
@@ -66,7 +71,7 @@ export default function Home({ user, onLogout, onOpenMod, onGoAdmin }) {
   }
 
   const progresoGeneral = calcularProgresoGeneral()
-  const modulosActivos = examenes.filter(e => !e.archivado && e.estado === 'activo')
+
 
   return (
     <>
@@ -83,8 +88,8 @@ export default function Home({ user, onLogout, onOpenMod, onGoAdmin }) {
           {['cap','rec','exa','ava'].map((t, i) => (
             <button key={t} className={'nb' + (tab === t ? ' active' : '')} onClick={() => setTab(t)}>
               {['Capacitaciones','Recursos','Exámenes','Mi Avance'][i]}
-              {t === 'exa' && modulosActivos.length > 0 && (
-                <span className="nbadge">{modulosActivos.length}</span>
+              {t === 'exa' && examenes.filter(e => !e.archivado && e.estado === 'activo').length > 0 && (
+                <span className="nbadge">{examenes.filter(e => !e.archivado && e.estado === 'activo').length}</span>
               )}
             </button>
           ))}
@@ -93,6 +98,38 @@ export default function Home({ user, onLogout, onOpenMod, onGoAdmin }) {
           <span style={{ background:'rgba(255,255,255,.1)', color:'rgba(255,255,255,.8)', fontSize:'10px', padding:'3px 9px', border:'1px solid rgba(255,255,255,.14)', fontWeight:500 }}>
             {user.sucursales?.nombre || user.region}
           </span>
+          {/* Notificaciones */}
+          <div style={{ position:'relative' }}>
+            <button
+              onClick={() => setShowNotifs(!showNotifs)}
+              style={{ background:'none', border:'none', cursor:'pointer', padding:'4px 8px', position:'relative' }}>
+              <span style={{ fontSize:'18px' }}>🔔</span>
+              {notifs.filter(n => !n.leida).length > 0 && (
+                <span style={{ position:'absolute', top:'0', right:'0', background:'var(--red)', color:'#fff', fontSize:'8px', fontWeight:700, padding:'1px 4px', borderRadius:'2px', minWidth:'14px', textAlign:'center' }}>
+                  {notifs.filter(n => !n.leida).length}
+                </span>
+              )}
+            </button>
+            {showNotifs && (
+              <div style={{ position:'absolute', right:0, top:'100%', width:'280px', background:'#fff', border:'1px solid var(--g200)', boxShadow:'0 4px 16px rgba(0,0,0,.12)', zIndex:50 }}>
+                <div style={{ padding:'.6rem .9rem', borderBottom:'1px solid var(--g100)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:'11px', fontWeight:700, color:'var(--navy)' }}>Notificaciones</span>
+                  <button onClick={() => setShowNotifs(false)} style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px', color:'var(--g400)' }}>×</button>
+                </div>
+                {notifs.length === 0 && (
+                  <div style={{ padding:'1rem', fontSize:'11px', color:'var(--g400)', textAlign:'center' }}>Sin notificaciones</div>
+                )}
+                {notifs.slice(0,5).map(n => (
+                  <div key={n.id} onClick={async () => { await marcarNotificacionLeida(n.id); await cargarTodo() }}
+                    style={{ padding:'.7rem .9rem', borderBottom:'1px solid var(--g100)', cursor:'pointer', background: n.leida ? '#fff' : '#F0FFF5' }}>
+                    <div style={{ fontSize:'11px', fontWeight:700, color:'var(--navy)', marginBottom:'2px' }}>{n.titulo}</div>
+                    <div style={{ fontSize:'10px', color:'var(--g400)' }}>{n.mensaje}</div>
+                    <div style={{ fontSize:'9px', color:'var(--g400)', marginTop:'2px' }}>{new Date(n.created_at).toLocaleDateString('es-PE')}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button className="admin-btn" onClick={() => onGoAdmin && onGoAdmin()}>⬡ Panel Admin</button>
         </div>
       </nav>
